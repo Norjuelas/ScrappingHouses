@@ -5,9 +5,12 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import NoSuchElementException, TimeoutException
+
 import pandas as pd
-import time
 import os
+import requests, re, time
+
+from urllib.parse import urlparse
 from bs4 import BeautifulSoup
 
 
@@ -47,6 +50,14 @@ class AirbnbScraper:
                     image = card.find('img', class_='itu7ddv')
                     price = card.find('span', class_='pquyp1l')
                     rating = card.find('span', class_='r4a59j5')
+                    if link_component and 'href' in link_component.attrs:
+                        id = urlparse(link_component['href']).path.split('/')[-1]
+                    else:
+                        id = None
+
+                    print(link_component)
+                    lat, lon = self.extract_lat_lon(id)
+                    print(id, lat, lon)
 
                     data = {
                         "link": link_component['href'] if link_component else None,
@@ -54,7 +65,10 @@ class AirbnbScraper:
                         "description": description.get_text(strip=True) if description else None,
                         "image": image['src'] if image else None,
                         "price": price.get_text(strip=True) if price else None,
-                        "rating": rating.get_text(strip=True) if rating else None
+                        "rating": rating.get_text(strip=True) if rating else None,
+                        "id": id if id else None,
+                        "lat": lat if lat else None,
+                        "lon": lon if lon else None,
                     }
 
                     cards_data.append(data)
@@ -129,12 +143,65 @@ class AirbnbScraper:
             print("Volviendo a la pestaña principal.")
 
         return self.master_df
+    
+    def extract_lat_lon(self, id):
+        attempts = 0
+        success = False
+
+        while not success and attempts < 10:
+            try:
+                URL = 'https://www.airbnb.com.co/rooms/'
+                r = requests.get(URL + id)
+                p_lat = re.compile(r'"lat":([-0-9.]+),')
+                p_lon = re.compile(r'"lng":([-0-9.]+),')
+                lat = p_lat.findall(r.text)[0]
+                lon = p_lon.findall(r.text)[0]
+                success = True
+                return lat , lon
+            except:
+                print('no hay cordenada pa')
+                attempts += 1
+                return 0 , 0
 
     def save_to_csv(self, filename="airbnb_listings.csv"):
-        """Guarda el DataFrame acumulado en un archivo CSV."""
-        self.master_df.to_csv(filename, index=False)
-        file_path = os.path.join(os.getcwd(), filename)
-        print(f"Datos exportados a: {file_path}")
+            """
+            Guarda el DataFrame acumulado en un archivo CSV, añadiendo los nuevos datos sin sobrescribir,
+            y eliminando duplicados.
+            """
+            # Verificar si el archivo CSV ya existe
+            if os.path.exists(filename):
+                # Leer los datos existentes
+                existing_df = pd.read_csv(filename)
+                original_size = existing_df.shape[0]
+                print(f"\nEl archivo existente tiene {original_size} registros.")
+            else:
+                # Crear un DataFrame vacío si el archivo no existe
+                existing_df = pd.DataFrame()
+                original_size = 0
+                print("\nNo se encontró archivo existente. Se creará uno nuevo.")
+            
+            current_date = time.strftime('%Y-%m-%d %H:%M:%S')
+            self.master_df['last_read_date'] = current_date            
+
+            # Concatenar el nuevo DataFrame con el DataFrame existente
+            combined_df = pd.concat([existing_df, self.master_df], ignore_index=True)
+
+            # Eliminar duplicados basados en la columna 'id'
+            combined_df.drop_duplicates(subset=['id'], inplace=True)
+
+            # Calcular el tamaño final del DataFrame y la cantidad de nuevos registros añadidos
+            final_size = combined_df.shape[0]
+            new_data_count = final_size - original_size
+
+            print(f"\nDatos actuales analizados: {self.master_df.shape[0]}")
+            print(f"Nuevos datos añadidos: {new_data_count}")
+            print(f"El DataFrame ha crecido de {original_size} a {final_size} registros.")
+
+            # Guardar el DataFrame actualizado en CSV
+            combined_df.to_csv(filename, index=False)
+            file_path = os.path.join(os.getcwd(), filename)
+            print(f"Datos exportados a: {file_path}")
+
 
     def run(self, group_size=3, max_pages=15, output_filename="airbnb_listings.csv"):
         """Ejecuta el proceso completo de scraping."""

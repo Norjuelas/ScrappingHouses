@@ -1,5 +1,4 @@
-# url_builder.py
-
+import requests
 from urllib.parse import urlencode, quote_plus
 
 class URLBuilder:
@@ -15,7 +14,10 @@ class URLBuilder:
     def add_list_param(self, key, values):
         """Agrega un parámetro de lista a la URL."""
         if values:
-            self.params[key] = values.split(',')
+            if isinstance(values, list):
+                self.params[key] = values
+            else:
+                self.params[key] = values.split(',')
 
     def build(self):
         """Construye la URL completa con los parámetros codificados."""
@@ -51,6 +53,18 @@ class URLBuilder:
         builder.add_param('search_type', kwargs.get('search_type', 'AUTOSUGGEST'))
         if kwargs.get('flexible_dates', True):
             builder.add_param('date_picker_type', 'flexible_dates')
+
+        # Parámetros adicionales basados en la URL de ejemplo
+        builder.add_param('tab_id', kwargs.get('tab_id', 'home_tab'))
+        builder.add_list_param('refinement_paths[]', kwargs.get('refinement_paths', '/homes'))
+        builder.add_list_param('flexible_trip_lengths[]', kwargs.get('flexible_trip_lengths', 'one_week'))
+        builder.add_param('monthly_start_date', kwargs.get('monthly_start_date'))
+        builder.add_param('monthly_length', kwargs.get('monthly_length'))
+        builder.add_param('monthly_end_date', kwargs.get('monthly_end_date'))
+        builder.add_param('price_filter_input_type', kwargs.get('price_filter_input_type', 0))
+        builder.add_param('channel', kwargs.get('channel', 'EXPLORE'))
+        builder.add_param('search_mode', kwargs.get('search_mode', 'regular_search'))
+        builder.add_param('price_filter_num_nights', kwargs.get('price_filter_num_nights'))
 
         # Agregar listas de parámetros
         builder.add_list_param('amenities[]', kwargs.get('amenities'))
@@ -88,3 +102,20 @@ class URLBuilder:
         builder.add_param('federated_search_id', kwargs.get('federated_search_id'))
 
         return builder.build()
+
+    @staticmethod
+    def analyze_robots_txt(base_url):
+        """Analiza el archivo robots.txt del sitio web especificado."""
+        robots_url = f"{base_url}/robots.txt"
+        try:
+            response = requests.get(robots_url)
+            if response.status_code == 200:
+                print(f"Análisis de {robots_url}:")
+                lines = response.text.splitlines()
+                for line in lines:
+                    print(line)
+            else:
+                print(f"No se pudo acceder a {robots_url}. Código de estado: {response.status_code}")
+        except Exception as e:
+            print(f"Error al analizar {robots_url}: {e}")
+
