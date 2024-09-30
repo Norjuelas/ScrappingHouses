@@ -1,7 +1,7 @@
 # tests/test_scraper.py
 
 import unittest
-from src.scraper import AirbnbScraper
+from src.airbnb_scraper import AirbnbScraper
 from dataExtractor.extractor import extract_next_links
 
 class TestAirbnbScraper(unittest.TestCase):
