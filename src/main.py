@@ -22,7 +22,9 @@ def main():
     scraper = AirbnbScraper(base_url=search_url)
 
     # Ejecutar el scraper
-    scraper.run(group_size=3, max_pages=3, output_filename="airbnb_listings.csv")
+    scraper.run(group_size=3, max_pages=15, output_filename="airbnb_listings.csv")
 
 if __name__ == "__main__":
     main()
+
+

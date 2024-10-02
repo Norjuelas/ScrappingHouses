@@ -5,6 +5,8 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import NoSuchElementException, TimeoutException
+from selenium.webdriver.firefox.options import Options
+
 
 import pandas as pd
 import os
@@ -21,8 +23,9 @@ class AirbnbScraper:
 
         :param base_url: URL principal para iniciar el scraping.
         """
-
-        self.driver = webdriver.Firefox()
+        self.options = Options() 
+        self.options.add_argument("--headless")
+        self.driver = webdriver.Firefox(options=self.options)
         self.base_url = base_url
         self.master_df = pd.DataFrame()
         print("WebDriver inicializado.")
@@ -48,7 +51,7 @@ class AirbnbScraper:
                     location = card.find('div', class_='t1jojoys')
                     description = card.find('div', class_='s1cjsi4j')
                     image = card.find('img', class_='itu7ddv')
-                    price = card.find('span', class_='pquyp1l')
+                    price = card.find('span', class_='_1aejdbt')
                     rating = card.find('span', class_='r4a59j5')
                     if link_component and 'href' in link_component.attrs:
                         id = urlparse(link_component['href']).path.split('/')[-1]
