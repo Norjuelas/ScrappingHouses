@@ -166,7 +166,7 @@ class AirbnbScraper:
             except:
                 print('no hay cordenada pa')
                 attempts += 1
-                return 0 , 0
+        return 0 , 0
 
     def save_to_csv(self, filename="airbnb_listings.csv"):
             """

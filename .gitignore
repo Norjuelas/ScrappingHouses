@@ -169,3 +169,7 @@ cython_debug/
 *.code-workspace
 airbnb_listings.csv
 *.csv
+
+#database keys and another private stuff
+
+keys/
