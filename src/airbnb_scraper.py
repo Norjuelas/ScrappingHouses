@@ -17,6 +17,7 @@ from bs4 import BeautifulSoup
 
 
 class AirbnbScraper:
+
     def __init__(self, base_url):
         """
         Inicializa el scraper con las configuraciones necesarias.
@@ -28,6 +29,7 @@ class AirbnbScraper:
         self.driver = webdriver.Firefox(options=self.options)
         self.base_url = base_url
         self.master_df = pd.DataFrame()
+        self.residuales = 6
         print("WebDriver inicializado.")
 
     def wait_for_page_load(self, seconds=3):
@@ -204,6 +206,8 @@ class AirbnbScraper:
             combined_df.to_csv(filename, index=False)
             file_path = os.path.join(os.getcwd(), filename)
             print(f"Datos exportados a: {file_path}")
+
+            self.residuales = new_data_count
 
 
     def run(self, group_size=3, max_pages=15, output_filename="airbnb_listings.csv"):
