@@ -1,18 +1,36 @@
 import firebase_admin
-from firebase_admin import credentials, db
+from firebase_admin import credentials, storage, db
 import csv
+from pathlib import Path
+import time
 
 # Inicializar Firebase Admin SDK
 cred = credentials.Certificate('./Keys/scrapping-23f1a-firebase-adminsdk-3u3sg-718f03964d.json')
 firebase_admin.initialize_app(cred, {
-    'databaseURL': 'https://scrapping-23f1a-default-rtdb.firebaseio.com/'
+    'databaseURL': 'https://scrapping-23f1a-default-rtdb.firebaseio.com/',
+    'storageBucket': 'scrapping-23f1a.appspot.com'  # Asegúrate de que coincida con tu bucket
 })
 
 # Referencia a la base de datos
 ref = db.reference('publicaciones')
+ref2 = db.reference('csv_files')
 
 # Ruta del archivo CSV
 csv_file = './airbnb_listings.csv'
+bucket = storage.bucket()
+
+# Subir el archivo CSV a Firebase Storage
+blob = bucket.blob(f'csv_files/{Path(csv_file).name}')
+blob.upload_from_filename(csv_file)
+
+# Obtener la URL de descarga
+download_url = blob.generate_signed_url(version='v4', expiration=3600)
+
+# Almacenar la URL en la base de datos
+ref2.push({
+    'file_name': Path(csv_file).name + " " + str(time.time),
+    'file_url': download_url
+})
 
 # Leer el archivo CSV y subir los datos a Firebase
 with open(csv_file, mode='r', newline='', encoding='utf-8') as file:
@@ -39,4 +57,5 @@ with open(csv_file, mode='r', newline='', encoding='utf-8') as file:
         # Subir los datos a Firebase bajo una nueva clave
         ref.push(data)
 
-    print(f"Datos del archivo CSV {csv_file} cargados exitosamente a Firebase!")
+
+print(f"Archivo CSV '{csv_file}' subido a Firebase Storage y URL almacenada en la base de datos.")

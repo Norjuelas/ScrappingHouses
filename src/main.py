@@ -1,51 +1,10 @@
-# main.py
-
-from airbnb_scraper import AirbnbScraper
-from url_builder import URLBuilder
 import random
 import time
+from airbnb_scraper import AirbnbScraper
+from url_builder import URLBuilder
 
-def main():
-
-    for localidad in locations:
-
-        # Construir una URL de búsqueda personalizada
-        search_url = URLBuilder.build_search_url(
-            city=localidad,
-            state='Bogotá DC',
-            place_id=None,
-            checkin=None,
-            checkout=None,
-            adults=None,
-            children=None,
-            amenities=None,
-            flexible_dates=None
-        )
-        
-        print(f"URL de búsqueda personalizada: {search_url}")
-
-        marg_sites = 6
-
-        while marg_sites > 5:
-            
-
-            x = random.randrange(0,60)
-            print(x)
-            
-            # Inicializar el scraper con la Url solicitada
-            scraper = AirbnbScraper(base_url=search_url)
-
-            # Ejecutar el scraper
-            scraper.run(group_size=6, max_pages=3, output_filename="airbnb_listings.csv")
-                        
-            marg_sites = scraper.residuales
-            print(marg_sites)
-            time.sleep(x)
-
-
-
-
-locations = {
+# Diccionario de ubicaciones con sus respectivos IDs
+LOCATIONS = {
     "ANTONIO NARIÑO": "ChIJzYwoOMmeP44RF7iErav7Jg0",
     "BARRIOS UNIDOS": "ChIJ6WFCSP6aP44RIujZPPZisvY",
     "BOSA": "ChIJ6Sh07G-eP44RAdG49C4lxUY",
@@ -68,27 +27,50 @@ locations = {
     "USME": "ChIJt9qBZPmjP44R4KJ7vKBwMqQ"
 }
 
-# if __name__ == "__main__":
+def scrape_location_data(location_name, group_size, max_pages):
+    """Realiza el scraping de una localidad específica."""
+    search_url = URLBuilder.build_search_url(
+        city=location_name,
+        state='Bogotá DC'
+    )
+    print(f"URL de búsqueda personalizada: {search_url}")
 
+    scraper = AirbnbScraper(base_url=search_url)
+    scraper.run(group_size=group_size, max_pages=max_pages, output_filename="airbnb_listings.csv")
 
-#     for i in locations:
-        
-#         marg_sites = 6
+    return scraper.residuales
 
-#         while marg_sites > 5:
+def iterate_over_locations(group_size):
+    """Itera sobre todas las localidades y ejecuta el scraper en cada una."""
+    contador_iter = 0
 
-#             x = random.randrange(0,60)
-#             print(x)
+    for location in LOCATIONS:
+        print(f"Iteración {contador_iter} para la localidad: {location}")
+
+        marg_sites = 6
+        while marg_sites > 5:
+            contador_iter += 1
+            delay = random.randrange(0, 60)
+            print(f"Esperando {delay} segundos antes de la próxima ejecución...")
+
+            marg_sites = scrape_location_data(location, group_size, max_pages=3)
+            print(f"Residuales: {marg_sites}")
             
-#             main(i)
-#             marg_sites = AirbnbScraper.residuales
-#             time.sleep(x)
+            time.sleep(delay)
 
-
+def main(flag_use, group_size, max_pages):
+    """
+    Controla la ejecución del scraping:
+    - Si flag_use es True, itera sobre todas las localidades.
+    - Si flag_use es False, ejecuta el scraping solo para 'Localidad'.
+    """
+    if flag_use:
+        iterate_over_locations(group_size)
+    else:
+        scrape_location_data('KENNEDY', group_size, max_pages)
 
 if __name__ == "__main__":
-
-    main()
+    main(flag_use=False, group_size=6, max_pages=3)
 
     
 

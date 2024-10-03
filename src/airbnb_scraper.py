@@ -7,6 +7,9 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import NoSuchElementException, TimeoutException
 from selenium.webdriver.firefox.options import Options
 
+import ast
+
+#que libreria tan poderosa no mms
 
 import pandas as pd
 import os
@@ -50,30 +53,32 @@ class AirbnbScraper:
             for card in cards:
                 try:
                     link_component = card.find('a', class_='bn2bl2p')
-                    location = card.find('div', class_='t1jojoys')
+                    TypeDescription = card.find('div', class_='t1jojoys')
                     description = card.find('div', class_='s1cjsi4j')
                     image = card.find('img', class_='itu7ddv')
                     price = card.find('span', class_='_1aejdbt')
                     rating = card.find('span', class_='r4a59j5')
                     if link_component and 'href' in link_component.attrs:
-                        id = urlparse(link_component['href']).path.split('/')[-1]
+                        idPublication = urlparse(link_component['href']).path.split('/')[-1]
                     else:
-                        id = None
+                        idPublication = None
 
                     print(link_component)
-                    lat, lon = self.extract_lat_lon(id)
-                    print(id, lat, lon)
+                    lat, lon = self.extract_lat_lon(idPublication)
+                    print(idPublication, lat, lon)
 
                     data = {
                         "link": link_component['href'] if link_component else None,
-                        "location": location.get_text(strip=True) if location else None,
+                        "TypeDescription": TypeDescription.get_text(strip=True) if TypeDescription else None,
                         "description": description.get_text(strip=True) if description else None,
                         "image": image['src'] if image else None,
                         "price": price.get_text(strip=True) if price else None,
                         "rating": rating.get_text(strip=True) if rating else None,
-                        "id": id if id else None,
+                        "idPublication": idPublication if idPublication else None,
                         "lat": lat if lat else None,
                         "lon": lon if lon else None,
+                        "TypeRoomOrHouse": self.roomOrHouse(TypeDescription.get_text(strip=True))
+
                     }
 
                     cards_data.append(data)
@@ -149,14 +154,14 @@ class AirbnbScraper:
 
         return self.master_df
     
-    def extract_lat_lon(self, id):
+    def extract_lat_lon(self, idPublication):
         attempts = 0
         success = False
 
         while not success and attempts < 10:
             try:
                 URL = 'https://www.airbnb.com.co/rooms/'
-                r = requests.get(URL + id)
+                r = requests.get(URL + idPublication)
                 p_lat = re.compile(r'"lat":([-0-9.]+),')
                 p_lon = re.compile(r'"lng":([-0-9.]+),')
                 lat = p_lat.findall(r.text)[0]
@@ -168,46 +173,94 @@ class AirbnbScraper:
                 attempts += 1
         return 0 , 0
 
+
     def save_to_csv(self, filename="airbnb_listings.csv"):
-            """
-            Guarda el DataFrame acumulado en un archivo CSV, añadiendo los nuevos datos sin sobrescribir,
-            y eliminando duplicados.
-            """
-            # Verificar si el archivo CSV ya existe
-            if os.path.exists(filename):
-                # Leer los datos existentes
-                existing_df = pd.read_csv(filename)
-                original_size = existing_df.shape[0]
-                print(f"\nEl archivo existente tiene {original_size} registros.")
+        """
+        Guarda el DataFrame acumulado en un archivo CSV, añadiendo los nuevos datos sin sobrescribir,
+        eliminando duplicados y actualizando el historial de precios.
+        """
+        # Verificar si el archivo CSV ya existe
+        if os.path.exists(filename):
+            # Leer los datos existentes, asegurando que se interprete 'price_history' como listas
+            existing_df = pd.read_csv(filename, converters={'price_history': ast.literal_eval})
+            original_size = existing_df.shape[0]
+            print(f"\nEl archivo existente tiene {original_size} registros.")
+        else:
+            # Crear un DataFrame vacío si el archivo no existe
+            existing_df = pd.DataFrame()
+            original_size = 0
+            print("\nNo se encontró archivo existente. Se creará uno nuevo.")
+        
+        current_date = time.strftime('%Y-%m-%d %H:%M:%S')
+        self.master_df['last_read_date'] = current_date
+
+        # Verificar o crear la columna de historial de precios en el DataFrame existente
+        if 'price_history' not in existing_df.columns:
+            existing_df['price_history'] = [[] for _ in range(existing_df.shape[0])]
+        if 'TypeRoomOrHouse' not in existing_df.columns:
+            self.filterRoomOrHouse(existing_df)
+
+        # Actualizar el historial de precios
+        for i, row in self.master_df.iterrows():
+            # Buscar si el idPublication ya existe en el DataFrame existente
+            matching_row = existing_df[existing_df['idPublication'] == row['idPublication']]
+
+            # Si existe, actualizamos el historial de precios
+            if not matching_row.empty:
+                index = matching_row.index[0]
+                price_history = existing_df.at[index, 'price_history']
+
+                # Agregar siempre la nueva tupla (precio actual, fecha actual) al historial
+                new_entry = (row['price'], current_date)
+                price_history.append(new_entry)
+
+                # Actualizar el DataFrame con el nuevo historial de precios
+                existing_df.at[index, 'price_history'] = price_history
+
+            # Si no existe, crear una nueva entrada
             else:
-                # Crear un DataFrame vacío si el archivo no existe
-                existing_df = pd.DataFrame()
-                original_size = 0
-                print("\nNo se encontró archivo existente. Se creará uno nuevo.")
-            
-            current_date = time.strftime('%Y-%m-%d %H:%M:%S')
-            self.master_df['last_read_date'] = current_date            
+                new_price_history = [(row['price'], current_date)]
+                row['price_history'] = new_price_history
+                existing_df = pd.concat([existing_df, pd.DataFrame([row])], ignore_index=True)
 
-            # Concatenar el nuevo DataFrame con el DataFrame existente
-            combined_df = pd.concat([existing_df, self.master_df], ignore_index=True)
+        # Eliminar duplicados basados en la columna 'idPublication'
+        combined_df = existing_df.drop_duplicates(subset=['idPublication'], keep='last')
 
-            # Eliminar duplicados basados en la columna 'id'
-            combined_df.drop_duplicates(subset=['id'], inplace=True)
+        # Calcular el tamaño final del DataFrame y la cantidad de nuevos registros añadidos
+        final_size = combined_df.shape[0]
+        new_data_count = final_size - original_size
 
-            # Calcular el tamaño final del DataFrame y la cantidad de nuevos registros añadidos
-            final_size = combined_df.shape[0]
-            new_data_count = final_size - original_size
+        print(f"\nDatos actuales analizados: {self.master_df.shape[0]}")
+        print(f"Nuevos datos añadidos: {new_data_count}")
+        print(f"El DataFrame ha crecido de {original_size} a {final_size} registros.")
 
-            print(f"\nDatos actuales analizados: {self.master_df.shape[0]}")
-            print(f"Nuevos datos añadidos: {new_data_count}")
-            print(f"El DataFrame ha crecido de {original_size} a {final_size} registros.")
+        # Guardar el DataFrame actualizado en CSV
+        combined_df.to_csv(filename, index=False)
+        file_path = os.path.join(os.getcwd(), filename)
+        print(f"Datos exportados a: {file_path}")
 
-            # Guardar el DataFrame actualizado en CSV
-            combined_df.to_csv(filename, index=False)
-            file_path = os.path.join(os.getcwd(), filename)
-            print(f"Datos exportados a: {file_path}")
+        # Actualizar el atributo residuales
+        self.residuales = new_data_count
 
-            self.residuales = new_data_count
+
+    def roomOrHouse(self,TypeDescription:str)->str:
+        """
+        clasifica descripciones si es habitacion o apto
+        """
+        if TypeDescription.startswith("Habitación"):
+            return "room"
+        else: return "house"
+
+    def filterRoomOrHouse(self,df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Añade una columna 'TypeRoomOrHouse' al DataFrame según el contenido de 'TypeDescription'.
+        Si el valor de 'TypeDescription' comienza con 'Habitación', asigna 'room', de lo contrario 'house'.
+        """
+        print("añadiendo columna 'TypeRoomOrHouse' inexistente... ")
+        # Crear una nueva columna 'TypeRoomOrHouse' basada en 'TypeDescription'
+        df['TypeRoomOrHouse'] = df['TypeDescription'].apply(lambda x: 'room' if x.startswith('Habitación') else 'house')        
+        return df
+
 
 
     def run(self, group_size=3, max_pages=15, output_filename="airbnb_listings.csv"):
