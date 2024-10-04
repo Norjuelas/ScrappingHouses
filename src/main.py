@@ -58,19 +58,19 @@ def iterate_over_locations(group_size):
             
             time.sleep(delay)
 
-def main(flag_use, group_size, max_pages):
+def main(infinite_iteration, group_size, max_pages):
     """
     Controla la ejecución del scraping:
-    - Si flag_use es True, itera sobre todas las localidades.
-    - Si flag_use es False, ejecuta el scraping solo para 'Localidad'.
+    - Si infinite_iteration es True, itera sobre todas las localidades.
+    - Si infinite_iteration es False, ejecuta el scraping solo para 'Localidad'.
     """
-    if flag_use:
+    if infinite_iteration:
         iterate_over_locations(group_size)
     else:
         scrape_location_data('KENNEDY', group_size, max_pages)
 
 if __name__ == "__main__":
-    main(flag_use=False, group_size=6, max_pages=3)
+    main(infinite_iteration=False, group_size=1, max_pages=1)
 
     
 
