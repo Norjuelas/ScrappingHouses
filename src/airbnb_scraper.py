@@ -7,9 +7,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import NoSuchElementException, TimeoutException
 from selenium.webdriver.firefox.options import Options
 
-import ast
-
-#que libreria tan poderosa no mms
+from urllib.parse import urlparse
 
 import pandas as pd
 import os
@@ -85,8 +83,8 @@ class AirbnbScraper:
             
             # Obtener latitud y longitud
             lat, lon = self.extract_lat_lon(idPublication)
-            print(idPublication, lat, lon)
-            
+            #Obtener primer comentario
+            ListaComentarios = self.extract_first_comment(idPublication)            
             # Crear diccionario con la información extraída
             data = {
                 "link": link_component['href'] if link_component else None,
@@ -98,13 +96,16 @@ class AirbnbScraper:
                 "idPublication": idPublication if idPublication else None,
                 "lat": lat if lat else None,
                 "lon": lon if lon else None,
-                "TypeRoomOrHouse": self.roomOrHouse(TypeDescription.get_text(strip=True)) if TypeDescription else None
+                "TypeRoomOrHouse": self.roomOrHouse(TypeDescription.get_text(strip=True)) if TypeDescription else None,
+                "ListaComentarios": ListaComentarios if ListaComentarios else None,
+                "PrimerComentario": ListaComentarios[0] if ListaComentarios else None
             }
             return data
         
         except Exception as e:
             print(f"Error al extraer un card: {e}")
             return None
+ 
 
 
     def parse_card(self, card):
@@ -135,7 +136,7 @@ class AirbnbScraper:
             wait = WebDriverWait(self.driver, 10)
             buttons = wait.until(EC.presence_of_all_elements_located((By.CLASS_NAME, "c1ackr0h")))
             links = [button.get_attribute("href") for button in buttons if button.get_attribute("href")]
-            print(f"Enlaces extraídos: {links}")
+            print(f"Enlaces extraídos exitosamente")
             return links
         except TimeoutException:
             print("Tiempo de espera excedido al extraer enlaces.")
@@ -143,7 +144,16 @@ class AirbnbScraper:
         except Exception as e:
             print(f"Error al extraer los enlaces: {e}")
             return []
+    def extractIdpublication(self, link_component: str) -> str:
+        # Verificar si el link_component es válido
+        if link_component:
+            # Extraer el idPublication del link
+            idPublication = urlparse(link_component).path.split('/')[-1]
+        else:
+            # Si el link no es válido, retorna None
+            idPublication = None
 
+        return idPublication
     def scroll_to_bottom(self):
         """Desplaza la página hasta el final para cargar todo el contenido."""
         self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
@@ -160,12 +170,12 @@ class AirbnbScraper:
 
             for link in current_group:
                 self.driver.execute_script(f"window.open('{link}', '_blank');")
-                print(f"Abriendo nueva pestaña: {link}")
+                print(f"Abriendo nueva pestaña: {self.extractIdpublication(link)}")
                 self.wait_for_page_load()
 
             for handle in self.driver.window_handles[1:]:  # Ignorar la pestaña principal
                 self.driver.switch_to.window(handle)
-                print(f"Procesando pestaña: {self.driver.current_url}")
+                print(f"Procesando pestaña")
                 self.wait_for_page_load()
 
                 cards_data = self.extract_listings()
@@ -208,7 +218,7 @@ class AirbnbScraper:
                 success = True
                 return lat , lon
             except:
-                print('no hay cordenada pa')
+                print('no existe cordenada')
                 attempts += 1
         return 0 , 0
     
@@ -227,7 +237,7 @@ class AirbnbScraper:
         """
         print("añadiendo columna 'TypeRoomOrHouse' inexistente... ")
         # Crear una nueva columna 'TypeRoomOrHouse' basada en 'TypeDescription'
-        df['TypeRoomOrHouse'] = df['TypeDescription'].apply(lambda x: 'room' if x.startswith('Habitación') else 'house')        
+        #df['TypeRoomOrHouse'] = df['TypeDescription'].apply(lambda x: 'room' if x.startswith('Habitación') else 'house')        
         return df
 
 
@@ -321,18 +331,12 @@ class AirbnbScraper:
 
     def inicializar_dataframe(self, existing_df):
         current_date = time.strftime('%Y-%m-%d %H:%M:%S')
-        self.master_df['last_read_date'] = current_date
-
-        #if 'price_history' not in existing_df.columns:
-            #existing_df['price_history'] = [[] for _ in range(existing_df.shape[0])]
-        #if 'TypeRoomOrHouse' not in existing_df.columns:
-            #self.filterRoomOrHouse(existing_df)
-        
+        self.master_df['last_read_date'] = current_date        
         return existing_df
 
     def verificar_archivo_existente(self, filename):
         if os.path.exists(filename):
-            existing_df = pd.read_csv(filename, converters={'price_history': ast.literal_eval})
+            existing_df = pd.read_csv(filename)
             original_size = existing_df.shape[0]
             print(f"\nEl archivo existente tiene {original_size} registros.")
         else:
@@ -340,4 +344,70 @@ class AirbnbScraper:
             original_size = 0
             print("\nNo se encontró archivo existente. Se creará uno nuevo.")
         return existing_df, original_size
+    def extract_first_comment(self, idPublication: str) -> list:
+        """
+        Extrae la fecha del primer comentario de la publicación dada.
+
+        :param idPublication: ID de la publicación de Airbnb.
+        :return: Fecha del primer comentario en formato de cadena, o None si no hay comentarios.
+        """
+        try:
+            # Acceder a la página de comentarios de la publicación
+            self.driver.get(f'https://www.airbnb.com.co/rooms/{idPublication}/reviews')
+            self.wait_for_page_load()
+
+            # Obtener el HTML de la página
+            page_source = self.driver.page_source
+            soup = BeautifulSoup(page_source, 'html.parser')
+
+            # Intentar extraer las fechas de los comentarios
+            datesComments = soup.find_all('div', class_='s78n3tv')
+            lista = []
+            if datesComments:
+                # Tomar la fecha del primer comentario
+                FirstCommentDate = datesComments[0].get_text(strip=True)
+                return lista.append(FirstCommentDate)
+            else:
+                print(f"No se encontraron comentarios en la publicación {idPublication}.")
+                return None
+        except Exception as e:
+            print(f"Error al extraer el primer comentario de la publicación {idPublication}: {e}")
+            return None
+
+
+def extract_comment_datesss(self, idPublication: str) -> list:
+    """
+    Extrae todas las fechas de los comentarios de la publicación dada.
+
+    :param idPublication: ID de la publicación de Airbnb.
+    :return: Lista de fechas de los comentarios en formato de cadena, o una lista vacía si no hay comentarios.
+    """
+    try:
+        # Acceder a la página de comentarios de la publicación
+        self.driver.get(f'https://www.airbnb.com.co/rooms/{idPublication}/reviews')
+        WebDriverWait(self.driver, 10).until(EC.presence_of_element_located((By.CLASS_NAME, 's78n3tv')))
+        
+        # Obtener el HTML de la página
+        page_source = self.driver.page_source
+        soup = BeautifulSoup(page_source,'html.parser')
+
+        # Intentar extraer las fechas de los comentarios
+        datesComments = soup.find_all('div', class_='s78n3tv')
+        comment_dates = []
+
+        if datesComments:
+            # Extraer todas las fechas y añadirlas a la lista
+            for date in datesComments:
+                date_text = date.get_text(strip=True)
+                comment_dates.append(date_text)
+            return comment_dates
+        else:
+            print(f"No se encontraron comentarios en la publicación {idPublication}.")
+            return []
+        
+    except Exception as e:
+        print(f"Error al extraer las fechas de los comentarios de la publicación {idPublication}: {e}")
+        return []
+
+
 
