@@ -25,18 +25,61 @@ class AirbnbScraper:
 
         :param base_url: URL principal para iniciar el scraping.
         """
-        self.options = Options() 
-        self.options.add_argument("--headless")
-        self.driver = webdriver.Firefox(options=self.options)
+        self.driver = self.init_driver() 
         self.base_url = base_url
         self.master_df = pd.DataFrame()
-        self.residuales = 6
+        self.residuales = None
         print("WebDriver inicializado.")
-
-    def wait_for_page_load(self, seconds=3):
-        """Espera un tiempo específico para cargar la página."""
-        time.sleep(seconds)
-
+    
+    def init_driver(self):
+        """Inicializa el WebDriver con las opciones necesarias."""
+        options = Options() 
+        options.add_argument("--headless")
+        return webdriver.Firefox(options=options)
+    
+    def wait_for_page_load(self, seconds=3, element=None, by=By.CLASS_NAME):
+        """
+        Espera a que la página cargue completamente o hasta que un elemento específico esté presente.
+        
+        :param seconds: Tiempo máximo de espera (en segundos).
+        :param element: Nombre del elemento a esperar (opcional).
+        :param by: Tipo de localizador de elementos (opcional, predeterminado By.CLASS_NAME).
+        :return: True si se encuentra el elemento o si la página carga dentro del tiempo, False si ocurre un Timeout.
+        """
+        try:
+            if element is None:
+                # Espera hasta que expire el tiempo indicado
+                WebDriverWait(self.driver, seconds).until(lambda driver: driver.execute_script("return document.readyState") == "complete")
+            else:
+                # Espera hasta que el elemento esté presente en el DOM
+                WebDriverWait(self.driver, seconds).until(EC.presence_of_element_located((by, element)))
+            return True
+        except TimeoutException:
+            print(f"Tiempo de espera agotado después de {seconds} segundos.")
+            return False
+    
+    def get_soup(self):
+        """Obtiene el HTML de la página actual y lo convierte en BeautifulSoup."""
+        try:
+            page_source = self.driver.page_source
+            soup = BeautifulSoup(page_source, 'html.parser')
+            return soup
+        except Exception as e:
+            print(f"Error al obtener el HTML: {e}")
+            return None
+        
+    def find_cards(self, soup):
+        """Encuentra todas las tarjetas de listados (cards) en la página."""
+        try:
+            return soup.find_all('div', class_='cy5jw6o')
+        except Exception as e:
+            print(f"Error al encontrar las tarjetas de listado: {e}")
+            return []
+    def scroll_to_bottom(self):
+        """Desplaza la página hasta el final para cargar todo el contenido."""
+        self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+        self.wait_for_page_load()
+        
     def extract_listings(self):
         """Extrae los datos de las tarjetas en la página actual utilizando BeautifulSoup."""
         cards_data = []
@@ -54,27 +97,6 @@ class AirbnbScraper:
             print(f"Error al encontrar las cards: {e}")
         
         return cards_data
-
-
-    def get_soup(self):
-        """Obtiene el HTML de la página actual y lo convierte en BeautifulSoup."""
-        try:
-            page_source = self.driver.page_source
-            soup = BeautifulSoup(page_source, 'html.parser')
-            return soup
-        except Exception as e:
-            print(f"Error al obtener el HTML: {e}")
-            return None
-
-
-    def find_cards(self, soup):
-        """Encuentra todas las tarjetas de listados (cards) en la página."""
-        try:
-            return soup.find_all('div', class_='cy5jw6o')
-        except Exception as e:
-            print(f"Error al encontrar las tarjetas de listado: {e}")
-            return []
-
 
     def extract_card_data(self, card):
         """Extrae los datos de una tarjeta individual."""
@@ -106,30 +128,6 @@ class AirbnbScraper:
             print(f"Error al extraer un card: {e}")
             return None
  
-
-
-    def parse_card(self, card):
-        """Parsea una tarjeta y extrae los componentes individuales."""
-        try:
-            link_component = card.find('a', class_='bn2bl2p')
-            TypeDescription = card.find('div', class_='t1jojoys')
-            description = card.find('div', class_='s1cjsi4j')
-            image = card.find('img', class_='itu7ddv')
-            price = card.find('span', class_='_11jcbg2')
-            rating = card.find('span', class_='r4a59j5')
-            
-            # Obtener idPublication del link
-            if link_component and 'href' in link_component.attrs:
-                idPublication = urlparse(link_component['href']).path.split('/')[-1]
-            else:
-                idPublication = None
-            
-            return link_component, TypeDescription, description, image, price, rating, idPublication
-        
-        except Exception as e:
-            print(f"Error al parsear la tarjeta: {e}")
-            return None, None, None, None, None, None, None
-
     def extract_next_links(self):
         """Extrae los enlaces para las próximas páginas desde la página actual."""
         try:
@@ -154,10 +152,7 @@ class AirbnbScraper:
             idPublication = None
 
         return idPublication
-    def scroll_to_bottom(self):
-        """Desplaza la página hasta el final para cargar todo el contenido."""
-        self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-        self.wait_for_page_load()
+
 
     def extract_data_in_groups(self, starting_links, group_size=3, max_pages=15):
         """Extrae datos en grupos de pestañas."""
@@ -221,6 +216,68 @@ class AirbnbScraper:
                 print('no existe cordenada')
                 attempts += 1
         return 0 , 0
+    def extract_comment_datesss(self, idPublication: str) -> list:
+        """
+        Extrae todas las fechas de los comentarios de la publicación dada.
+
+        :param idPublication: ID de la publicación de Airbnb.
+        :return: Lista de fechas de los comentarios en formato de cadena, o una lista vacía si no hay comentarios.
+        """
+        try:
+            # Acceder a la página de comentarios de la publicación
+            self.driver.get(f'https://www.airbnb.com.co/rooms/{idPublication}/reviews')
+            WebDriverWait(self.driver, 10).until(EC.presence_of_element_located((By.CLASS_NAME, 's78n3tv')))
+            
+            # Obtener el HTML de la página
+            page_source = self.driver.page_source
+            soup = BeautifulSoup(page_source,'html.parser')
+
+            # Intentar extraer las fechas de los comentarios
+            datesComments = soup.find_all('div', class_='s78n3tv')
+            comment_dates = []
+
+            if datesComments:
+                # Extraer todas las fechas y añadirlas a la lista
+                for date in datesComments:
+                    date_text = date.get_text(strip=True)
+                    comment_dates.append(date_text)
+                return comment_dates
+            else:
+                print(f"No se encontraron comentarios en la publicación {idPublication}.")
+                return []
+            
+        except Exception as e:
+            print(f"Error al extraer las fechas de los comentarios de la publicación {idPublication}: {e}")
+            return []
+    
+    def extract_first_comment(self, idPublication: str) -> list:
+        """
+        Extrae la fecha del primer comentario de la publicación dada.
+
+        :param idPublication: ID de la publicación de Airbnb.
+        :return: Fecha del primer comentario en formato de cadena, o None si no hay comentarios.
+        """
+        try:
+            # Acceder a la página de comentarios de la publicación
+            self.driver.get(f'https://www.airbnb.com.co/rooms/{idPublication}/reviews')
+            self.wait_for_page_load()
+
+            # Obtener el HTML de la página
+            soup = self.get_soup
+
+            # Intentar extraer las fechas de los comentarios
+            datesComments = soup.find_all('div', class_='s78n3tv')
+            lista = []
+            if datesComments:
+                # Tomar la fecha del primer comentario
+                FirstCommentDate = datesComments[0].get_text(strip=True)
+                return lista.append(FirstCommentDate)
+            else:
+                print(f"No se encontraron comentarios en la publicación {idPublication}.")
+                return None
+        except Exception as e:
+            print(f"Error al extraer el primer comentario de la publicación {idPublication}: {e}")
+            return None
     
     def roomOrHouse(self,TypeDescription:str)->str:
         """
@@ -230,6 +287,27 @@ class AirbnbScraper:
             return "room"
         else: return "house"
 
+    def parse_card(self, card):
+        """Parsea una tarjeta y extrae los componentes individuales."""
+        try:
+            link_component = card.find('a', class_='bn2bl2p')
+            TypeDescription = card.find('div', class_='t1jojoys')
+            description = card.find('div', class_='s1cjsi4j')
+            image = card.find('img', class_='itu7ddv')
+            price = card.find('span', class_='_11jcbg2')
+            rating = card.find('span', class_='r4a59j5')
+            
+            # Obtener idPublication del link
+            if link_component and 'href' in link_component.attrs:
+                idPublication = urlparse(link_component['href']).path.split('/')[-1]
+            else:
+                idPublication = None
+            
+            return link_component, TypeDescription, description, image, price, rating, idPublication
+        
+        except Exception as e:
+            print(f"Error al parsear la tarjeta: {e}")
+            return None, None, None, None, None, None, None
     def filterRoomOrHouse(self,df: pd.DataFrame) -> pd.DataFrame:
         """
         Añade una columna 'TypeRoomOrHouse' al DataFrame según el contenido de 'TypeDescription'.
@@ -239,8 +317,6 @@ class AirbnbScraper:
         # Crear una nueva columna 'TypeRoomOrHouse' basada en 'TypeDescription'
         #df['TypeRoomOrHouse'] = df['TypeDescription'].apply(lambda x: 'room' if x.startswith('Habitación') else 'house')        
         return df
-
-
 
     def run(self, group_size=3, max_pages=15, output_filename="airbnb_listings.csv"):
         """Ejecuta el proceso completo de scraping."""
@@ -288,13 +364,28 @@ class AirbnbScraper:
             print(f"\nTiempo total de ejecución: {elapsed_time:.2f} segundos")
 
     def save_to_csv(self, filename="airbnb_listings.csv"):
-        existing_df, original_size = self.verificar_archivo_existente(filename)
-        existing_df = self.inicializar_dataframe(existing_df)
+        self.master_df, original_size = self.verificar_archivo_existente(filename)
+        self.master_df = self.inicializar_dataframe(self.master_df)
         current_date = time.strftime('%Y-%m-%d %H:%M:%S')
-        #existing_df = self.actualizar_historial_precios(existing_df, current_date)
-        combined_df = self.eliminar_duplicados(existing_df)
+        #self.master_df = self.actualizar_historial_precios(self.master_df, current_date)
+        combined_df = self.eliminar_duplicados(self.master_df)
         self.actualizar_estadisticas(original_size, combined_df)
         self.guardar_dataframe(combined_df, filename)
+
+    def inicializar_dataframe(self, master_df):
+        current_date = time.strftime('%Y-%m-%d %H:%M:%S')
+        master_df['last_read_date'] = current_date        
+        return master_df
+
+    def verificar_archivo_existente(self, filename):
+        if os.path.exists(filename):
+            original_size = self.master_df.shape[0]
+            print(f"\nEl archivo existente tiene {original_size} registros.")
+        else:
+            self.master_df = pd.DataFrame()
+            original_size = 0
+            print("\nNo se encontró archivo existente. Se creará uno nuevo.")
+        return self.master_df, original_size
 
     def actualizar_estadisticas(self, original_size, combined_df):
         final_size = combined_df.shape[0]
@@ -309,105 +400,27 @@ class AirbnbScraper:
         file_path = os.path.join(os.getcwd(), filename)
         print(f"Datos exportados a: {file_path}")
 
-    def eliminar_duplicados(self, existing_df):
-        return existing_df.drop_duplicates(subset=['idPublication'], keep='last')
+    def eliminar_duplicados(self, master_df):
+        return master_df.drop_duplicates(subset=['idPublication'], keep='last')
 
-    def actualizar_historial_precios(self, existing_df, current_date):
-        for i, row in self.master_df.iterrows():
-            matching_row = existing_df[existing_df['idPublication'] == row['idPublication']]
+    def actualizar_historial_precios(self, master_df, current_date):
+        for i, row in master_df.iterrows():
+            matching_row = master_df[self.master_df['idPublication'] == row['idPublication']]
             
             if not matching_row.empty:
                 index = matching_row.index[0]
-                price_history = existing_df.at[index, 'price_history']
+                price_history = self.master_df.at[index, 'price_history']
                 new_entry = (row['price'], current_date)
                 price_history.append(new_entry)
-                existing_df.at[index, 'price_history'] = price_history
+                self.master_df.at[index, 'price_history'] = price_history
             else:
                 new_price_history = [(row['price'], current_date)]
                 row['price_history'] = new_price_history
-                existing_df = pd.concat([existing_df, pd.DataFrame([row])], ignore_index=True)
+                self.master_df = pd.concat([self.master_df, pd.DataFrame([row])], ignore_index=True)
 
-        return existing_df
-
-    def inicializar_dataframe(self, existing_df):
-        current_date = time.strftime('%Y-%m-%d %H:%M:%S')
-        self.master_df['last_read_date'] = current_date        
-        return existing_df
-
-    def verificar_archivo_existente(self, filename):
-        if os.path.exists(filename):
-            existing_df = pd.read_csv(filename)
-            original_size = existing_df.shape[0]
-            print(f"\nEl archivo existente tiene {original_size} registros.")
-        else:
-            existing_df = pd.DataFrame()
-            original_size = 0
-            print("\nNo se encontró archivo existente. Se creará uno nuevo.")
-        return existing_df, original_size
-    def extract_first_comment(self, idPublication: str) -> list:
-        """
-        Extrae la fecha del primer comentario de la publicación dada.
-
-        :param idPublication: ID de la publicación de Airbnb.
-        :return: Fecha del primer comentario en formato de cadena, o None si no hay comentarios.
-        """
-        try:
-            # Acceder a la página de comentarios de la publicación
-            self.driver.get(f'https://www.airbnb.com.co/rooms/{idPublication}/reviews')
-            self.wait_for_page_load()
-
-            # Obtener el HTML de la página
-            page_source = self.driver.page_source
-            soup = BeautifulSoup(page_source, 'html.parser')
-
-            # Intentar extraer las fechas de los comentarios
-            datesComments = soup.find_all('div', class_='s78n3tv')
-            lista = []
-            if datesComments:
-                # Tomar la fecha del primer comentario
-                FirstCommentDate = datesComments[0].get_text(strip=True)
-                return lista.append(FirstCommentDate)
-            else:
-                print(f"No se encontraron comentarios en la publicación {idPublication}.")
-                return None
-        except Exception as e:
-            print(f"Error al extraer el primer comentario de la publicación {idPublication}: {e}")
-            return None
+        return master_df
 
 
-def extract_comment_datesss(self, idPublication: str) -> list:
-    """
-    Extrae todas las fechas de los comentarios de la publicación dada.
-
-    :param idPublication: ID de la publicación de Airbnb.
-    :return: Lista de fechas de los comentarios en formato de cadena, o una lista vacía si no hay comentarios.
-    """
-    try:
-        # Acceder a la página de comentarios de la publicación
-        self.driver.get(f'https://www.airbnb.com.co/rooms/{idPublication}/reviews')
-        WebDriverWait(self.driver, 10).until(EC.presence_of_element_located((By.CLASS_NAME, 's78n3tv')))
-        
-        # Obtener el HTML de la página
-        page_source = self.driver.page_source
-        soup = BeautifulSoup(page_source,'html.parser')
-
-        # Intentar extraer las fechas de los comentarios
-        datesComments = soup.find_all('div', class_='s78n3tv')
-        comment_dates = []
-
-        if datesComments:
-            # Extraer todas las fechas y añadirlas a la lista
-            for date in datesComments:
-                date_text = date.get_text(strip=True)
-                comment_dates.append(date_text)
-            return comment_dates
-        else:
-            print(f"No se encontraron comentarios en la publicación {idPublication}.")
-            return []
-        
-    except Exception as e:
-        print(f"Error al extraer las fechas de los comentarios de la publicación {idPublication}: {e}")
-        return []
 
 
 
